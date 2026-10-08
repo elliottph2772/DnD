@@ -1,0 +1,48 @@
+/* Page ground and the few primitives every screen shares. Everything else
+   lives in a component's own .module.css, built from the Nocturne tokens. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Small-caps label, the system's workhorse. UI-SPEC: 9.5–11px, .14–.16em. */
+.label {
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+/* Numbers are monospaced so a changing HP total does not shift the layout. */
+.num {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Every interactive target in the player sheet and the GM drawer clears the
+   44px minimum, per UI-SPEC's mobile rule. */
+.tap {
+  min-height: 44px;
+  min-width: 44px;
+}

@@ -2,8 +2,29 @@
 // Row: [name, level, school, one-line blurb, classes]
 // Class codes: B bard · C cleric · D druid · P paladin · R ranger · S sorcerer · K warlock · W wizard
 // Level 0 = cantrip.
-(function () {
-  var S = [
+//
+// Converted from the prototype's src/data/spells.js. The numbers are untouched.
+
+export type SpellSchool =
+  | 'Abjuration' | 'Conjuration' | 'Divination' | 'Enchantment'
+  | 'Evocation' | 'Illusion' | 'Necromancy' | 'Transmutation';
+
+/** Single-letter class codes as they appear in the data rows. */
+export type ClassCode = 'B' | 'C' | 'D' | 'P' | 'R' | 'S' | 'K' | 'W';
+
+export interface Spell {
+  name: string;
+  /** 0 = cantrip, 1–9 = spell level. */
+  level: number;
+  school: SpellSchool;
+  /** One-line blurb shown on the selectable spell row. */
+  text: string;
+  classes: ClassCode[];
+}
+
+type SpellRow = readonly [string, number, string, string, string];
+
+const S: readonly SpellRow[] = [
     // ------------------------------------------------------------- cantrips
     ["Acid Splash",0,"Conjuration","Hurl a bubble of acid at one or two creatures; Dex save or 1d6 acid.","S,W"],
     ["Blade Ward",0,"Abjuration","Resistance to bludgeoning, piercing and slashing until end of your next turn.","B,S,K,W"],
@@ -375,9 +396,12 @@
     ["True Resurrection",9,"Necromancy","Return a creature dead up to two centuries, body restored or replaced.","C,D"],
     ["Weird",9,"Illusion","Each creature in a sphere sees its own worst fear and may die of it.","W"],
     ["Wish",9,"Conjuration","The mightiest spell: duplicate any 8th-level spell, or alter reality.","S,W"]
-  ];
+];
 
-  window.SPELLS = S.map(function (r) {
-    return { name: r[0], level: r[1], school: r[2], text: r[3], classes: r[4].split(",") };
-  });
-})();
+export const SPELLS: readonly Spell[] = S.map((r) => ({
+  name: r[0],
+  level: r[1],
+  school: r[2] as SpellSchool,
+  text: r[3],
+  classes: r[4].split(',') as ClassCode[],
+}));

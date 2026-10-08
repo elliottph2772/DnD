@@ -101,8 +101,14 @@ Deferred:
 - `gm-agent` had never been deployed (the project's function list was empty).
 - Migration 0002 had never been run; `campaign_secrets` and `chat` did not
   exist. Both were created 2026-10-08.
-- `campaigns` and `characters` were empty — 0 rows — so nothing was at risk in
-  turning the policies down.
+- `campaigns` held one saved campaign, `RFD5QZ` ("The Ashfall Compact", one
+  feed line, no characters built, no seats claimed), and `characters` held nine
+  rows — five of them orphans belonging to campaigns `4MRTDF` and `YGMGUC`,
+  which no longer exist. (A first check via the Supabase MCP `list_tables`
+  reported 0 rows for both; that is a stale planner estimate, not a count.
+  Trust `select count(*)`.) Nothing was lost: the policy change touches no
+  data, and no campaign has GM credentials yet, so `RFD5QZ` needs a
+  `provision` before the locked-down console can write it.
 - The Supabase project was paused by free-tier inactivity and had to be
   restored. It pauses again after about a week idle: check before a game night.
 - The build deployed on Pages was **older** than the prototype build in the

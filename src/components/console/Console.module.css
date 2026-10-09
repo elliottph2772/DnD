@@ -1,0 +1,705 @@
+/* The GM console, shaped after the design prototype: a full-height app, not a
+   scrolling page. The header is fixed, and each of the three columns scrolls
+   on its own so the transcript never drags the party rail with it. */
+
+.shell {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+/* ---------------------------------------------------------------- header */
+/* Named for the header, not shortened to .bar — the party rail's HP meter
+   already owns that name, and a CSS-module collision silently takes the
+   later rule. */
+.topbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-neutral-900);
+  background: linear-gradient(180deg, #1b1d2c, var(--color-bg));
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.brandName {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+
+.brandSub {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-neutral-900);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.fieldValue {
+  font-size: 13px;
+  color: var(--color-neutral-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* Threat and corruption read as pressure gauges, not numbers in a list. */
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 0 1 200px;
+  min-width: 96px;
+}
+
+.meterHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.meterValue {
+  color: var(--color-accent-400);
+}
+
+.meterTrack {
+  height: 4px;
+  background: var(--color-neutral-900);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.meterFill {
+  height: 100%;
+  transition: width 200ms ease-out;
+}
+
+.threatFill {
+  background: linear-gradient(90deg, var(--color-accent-700), var(--color-accent-400));
+}
+
+.corruptionFill {
+  background: linear-gradient(90deg, var(--color-accent-800), var(--color-accent-500));
+}
+
+/* ---------------------------------------------------------------- columns */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 290px) minmax(420px, 1fr) minmax(240px, 360px);
+  min-height: 0;
+}
+
+/* Each column is its own panel with a fixed head and a scrolling body. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #181a29;
+  border-right: 1px solid var(--color-neutral-900);
+}
+
+.right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #181a29;
+  border-left: 1px solid var(--color-neutral-900);
+}
+
+.centre {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-neutral-900);
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* A footer pinned to the bottom of a column. */
+.pinned {
+  border-top: 1px solid var(--color-neutral-900);
+  padding: var(--space-4);
+  background: var(--color-bg);
+}
+
+/* The busy label pulses so a long agent turn does not look frozen. */
+@keyframes emberpulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.busy {
+  color: var(--color-accent-400);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  animation: emberpulse 1.2s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------ transcript */
+.feedScroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--space-8) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* Each entry carries a left rule, which separates speakers without a box. */
+.line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  border-left: 1px solid var(--color-neutral-900);
+  padding-left: var(--space-6);
+}
+
+.speaker {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+/* The GM's own voice is the one that carries the scene. */
+.speakerGm {
+  color: var(--color-accent-400);
+}
+
+.lineText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-neutral-300);
+  white-space: pre-wrap;
+  text-wrap: pretty;
+}
+
+.composer {
+  border-top: 1px solid var(--color-neutral-900);
+  padding: var(--space-6);
+  background: #181a29;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.composerRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+
+/* ----------------------------------------------------------------- dice */
+.diceHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--color-neutral-900), transparent);
+}
+
+.stepper {
+  width: 24px;
+  height: 24px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 4px;
+  color: var(--color-neutral-400);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepper:hover {
+  border-color: var(--color-accent-700);
+  color: var(--color-text);
+}
+
+.bonus {
+  width: 44px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-neutral-800);
+  color: var(--color-accent-300);
+  border-radius: 4px;
+  padding: 2px;
+  font-size: 11px;
+  text-align: center;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.modes {
+  display: flex;
+  gap: 4px;
+  margin-bottom: var(--space-2);
+}
+
+.mode {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 4px;
+  padding: 6px 0;
+  color: var(--color-neutral-600);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mode[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  color: var(--color-accent-300);
+}
+
+.tray {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: var(--space-2);
+}
+
+.die {
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 4px;
+  padding: var(--space-2) 0;
+  color: var(--color-neutral-400);
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.die:hover {
+  border-color: var(--color-accent-700);
+  color: var(--color-text);
+}
+
+.die:active {
+  background: var(--color-accent-900);
+}
+
+.result {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-height: 18px;
+}
+
+.resultDetail {
+  flex: 1;
+  min-width: 0;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--color-neutral-500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resultTotal {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  color: var(--color-accent-300);
+}
+
+/* Below the three-column breakpoint the shell stops being a desk. */
+@media (max-width: 1100px) {
+  .shell {
+    height: auto;
+    overflow: visible;
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail,
+  .right {
+    border: 0;
+    border-top: 1px solid var(--color-neutral-900);
+  }
+
+  .scroll,
+  .feedScroll {
+    overflow: visible;
+  }
+}
+
+/* ----------------------------------------------------------- party rail */
+.seatCard {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+}
+
+.seatHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.seatName {
+  color: var(--color-neutral-200);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seatCls {
+  font-size: 11px;
+  color: var(--color-neutral-600);
+}
+
+.hpLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.hpText {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--color-neutral-400);
+  min-width: 7ch;
+}
+
+.bar {
+  flex: 1;
+  height: 4px;
+  background: var(--color-neutral-900);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  background: var(--color-accent-500);
+}
+
+.barLow {
+  background: #e0a3a3;
+}
+
+.nudges {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.nudge {
+  flex: 1;
+  min-height: 44px;
+  background: transparent;
+  border: 1px solid var(--color-divider);
+  border-radius: 4px;
+  color: var(--color-neutral-400);
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.nudge:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-200);
+}
+
+/* A condition riding on a party member: name · rounds · release. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  background: var(--color-accent-900);
+  border: 1px solid var(--color-accent-800);
+  border-radius: 4px;
+  color: var(--color-accent-300);
+  font-size: 10.5px;
+}
+
+.release {
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  color: var(--color-accent-400);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.release:hover {
+  color: #e0a3a3;
+}
+
+.pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--color-accent-700);
+  background: var(--color-accent-300);
+}
+
+.pipSpent {
+  background: transparent;
+  border-color: var(--color-neutral-800);
+}
+
+/* ------------------------------------------------------------ transcript */
+.feed {
+  display: grid;
+  gap: var(--space-4);
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: var(--space-2);
+}
+
+.pending {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-left: 2px solid var(--color-accent-800);
+  border-radius: 4px;
+  color: var(--color-neutral-600);
+  font-size: 12px;
+}
+
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.quick .btn {
+  flex: 1 1 auto;
+}
+
+/* ------------------------------------------------------------- tool tabs */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-neutral-900);
+}
+
+.tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-3);
+  color: var(--color-neutral-600);
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.tab:hover {
+  color: var(--color-neutral-300);
+}
+
+.tab[aria-selected='true'] {
+  color: var(--color-accent-200);
+  border-bottom-color: var(--color-accent);
+}
+
+.panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.rowBetween {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-neutral-900);
+}
+
+.rowBetween:last-child {
+  border-bottom: 0;
+}
+
+.grow {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-neutral-600);
+  font-size: 11.5px;
+}
+
+.note {
+  margin: 0;
+  color: #e0a3a3;
+  font-size: 11.5px;
+}
+
+.card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+}
+
+.danger {
+  border-color: #7d5a5a;
+  color: #e0a3a3;
+}
+
+.danger:hover {
+  background: #33232a;
+}
+
+/* The biome's ASCII map keeps its grid. */
+.map {
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--color-neutral-400);
+  overflow-x: auto;
+}
+
+/* --------------------------------------------------------- delete dialog */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: rgba(11, 12, 20, 0.72);
+  z-index: 40;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 400px;
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.dialogBody {
+  margin: 0;
+  color: var(--color-neutral-400);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.dialogWarn {
+  margin: 0;
+  color: #e0a3a3;
+  font-size: 12.5px;
+}
+
+.dialogButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

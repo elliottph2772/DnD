@@ -1,0 +1,308 @@
+/* The six-step character wizard. Shared by Wizard.tsx and its step files —
+   they are one screen, and splitting the sheet per step would only duplicate
+   the row, grid and chip rules every step uses. */
+
+.wrap {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.heading {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+/* "Step 3 of 6" */
+.counter {
+  flex: none;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--color-neutral-600);
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-neutral-600);
+  font-size: 12px;
+}
+
+.body {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* ------------------------------------------------------------- pick rows */
+.options {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Two columns once there is room; one on a phone. */
+.cols {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.option {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+  color: var(--color-neutral-300);
+  font: inherit;
+  cursor: pointer;
+  /* UI-SPEC: every target in the player sheet clears 44px. */
+  min-height: 44px;
+}
+
+.option:hover {
+  border-color: var(--color-accent-700);
+}
+
+.option[aria-pressed='true'] {
+  background: var(--color-accent-900);
+  border-color: var(--color-accent-800);
+  color: var(--color-accent-200);
+}
+
+/* A full list dims what is not chosen to 40%, per UI-SPEC. */
+.dim {
+  opacity: 0.4;
+}
+
+.optName {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.optDesc {
+  font-size: 11.5px;
+  color: var(--color-neutral-600);
+  line-height: 1.5;
+}
+
+/* The sourcebook a subclass came from. */
+.source {
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-accent-600);
+}
+
+.group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* ------------------------------------------------------------ point buy */
+.scores {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.score {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+  min-height: 44px;
+}
+
+.scoreName {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-neutral-500);
+}
+
+.step {
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: 1px solid var(--color-divider);
+  border-radius: 4px;
+  color: var(--color-neutral-300);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.step:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent-200);
+}
+
+.step:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.scoreValue {
+  min-width: 2.5ch;
+  text-align: center;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  color: var(--color-text);
+}
+
+/* The racial increase and the resulting total, to the right of the dial. */
+.scoreTotal {
+  min-width: 7ch;
+  text-align: right;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--color-neutral-600);
+}
+
+.bonus {
+  color: var(--color-accent-400);
+}
+
+.budget {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.budgetSpent {
+  color: var(--color-accent-300);
+}
+
+.budgetDone {
+  color: var(--color-neutral-600);
+}
+
+/* ---------------------------------------------------------------- chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 4px;
+  color: var(--color-neutral-400);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--color-accent-700);
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--color-accent-900);
+  border-color: var(--color-accent-800);
+  color: var(--color-accent-200);
+}
+
+.chip:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------- summary */
+.summary {
+  display: grid;
+  gap: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-neutral-900);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.rowValue {
+  text-align: right;
+  color: var(--color-neutral-200);
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--space-2);
+}
+
+.stat {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: var(--space-3) var(--space-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+}
+
+.statValue {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 16px;
+  color: var(--color-text);
+}
+
+.statMod {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--color-accent-400);
+}
+
+/* ----------------------------------------------------------------- nav */
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.traits {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--color-neutral-600);
+  font-size: 11.5px;
+}
+
+@media (max-width: 480px) {
+  .statGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

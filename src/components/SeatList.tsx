@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useWorld } from '../store/world';
 import styles from './SeatList.module.css';
 
@@ -20,6 +21,19 @@ export default function SeatList({ claimable = false }: Props) {
   const myId = useWorld((s) => s.clientId);
   const claimSeat = useWorld((s) => s.claimSeat);
   const leaveSeat = useWorld((s) => s.leaveSeat);
+
+  // Leaving a built seat wipes the character, in the database as well as
+  // here, and there is no undo. Ask once before throwing away a sheet
+  // somebody spent the wizard building.
+  const [confirming, setConfirming] = useState(false);
+
+  // Whether this client already holds a seat at this table.
+  const seated = mySlot > 0;
+
+  const leave = () => {
+    setConfirming(false);
+    void leaveSeat();
+  };
 
   return (
     <div className={styles.list}>
@@ -52,11 +66,39 @@ export default function SeatList({ claimable = false }: Props) {
             {claimable && (
               <div className={styles.action}>
                 {isMine ? (
-                  <button type="button" className="btn btn-secondary tap" onClick={() => void leaveSeat()}>
-                    Leave slot
-                  </button>
+                  char?.built && !confirming ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary tap"
+                      onClick={() => setConfirming(true)}
+                    >
+                      Leave slot
+                    </button>
+                  ) : char?.built ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-secondary tap"
+                        onClick={() => setConfirming(false)}
+                      >
+                        Keep
+                      </button>
+                      <button type="button" className={`btn tap ${styles.danger}`} onClick={leave}>
+                        Discard {char.name || 'character'}
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" className="btn btn-secondary tap" onClick={leave}>
+                      Leave slot
+                    </button>
+                  )
                 ) : taken ? (
                   <span className={styles.note}>taken</span>
+                ) : seated ? (
+                  // One player, one seat. Holding a seat means the empty ones
+                  // are not yours to take — leaving is the way to move, and it
+                  // is the only path that asks about the character you built.
+                  <span className={styles.note}>open</span>
                 ) : (
                   <button
                     type="button"

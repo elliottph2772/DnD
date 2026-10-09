@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import SeatList from '../components/SeatList';
+import Sheet from '../components/sheet/Sheet';
+import Wizard from '../components/wizard/Wizard';
 import type { Route } from '../lib/route';
+import { blankCharacter, pendingChat } from '../lib/world';
 import { useWorld } from '../store/world';
 import styles from './Shell.module.css';
 
@@ -16,7 +19,15 @@ export default function Play({ route }: { route: Route }) {
   const slot = useWorld((s) => s.slot);
   const connect = useWorld((s) => s.connect);
   const declare = useWorld((s) => s.declare);
-  const pending = useWorld((s) => s.pending());
+  const party = useWorld((s) => s.party);
+  const setMyCharacter = useWorld((s) => s.setMyCharacter);
+  // Select the raw inputs and derive here. `s.pending()` filters, so it returns
+  // a new array on every call; as a selector that reference never settles and
+  // Zustand's useSyncExternalStore snapshot loops until React gives up. The
+  // store keeps pending() for callers outside React.
+  const chat = useWorld((s) => s.chat);
+  const cursor = useWorld((s) => s.world.chat_cursor);
+  const pending = useMemo(() => pendingChat(chat, cursor), [chat, cursor]);
 
   const [text, setText] = useState('');
 
@@ -38,6 +49,48 @@ export default function Play({ route }: { route: Route }) {
           <h1 className={styles.title}>No campaign in this link</h1>
         </header>
         <p className={styles.hint}>Ask your GM for the invite link.</p>
+      </div>
+    );
+  }
+
+  // A claimed seat with no character behind it goes straight to the wizard —
+  // there is no sheet to show until it has been built.
+  const me = slot > 0 ? party[slot - 1] : null;
+  if (me && !me.built) {
+    return (
+      <div className={styles.page}>
+        <header className={styles.head}>
+          <h1 className={styles.title}>{world.campaign || route.code}</h1>
+          <span className={`${styles.status} ${conn === 'live' ? styles.live : ''}`}>
+            Seat {slot} · {status || 'Connecting…'}
+          </span>
+        </header>
+        <Wizard
+          character={me ?? blankCharacter()}
+          onDone={(next) => setMyCharacter(next)}
+        />
+      </div>
+    );
+  }
+
+  // A built character gets the sheet; the lobby below is for anyone still
+  // choosing a seat.
+  if (me?.built) {
+    return (
+      <div className={styles.page}>
+        <header className={styles.head}>
+          <h1 className={styles.title}>{world.campaign || route.code}</h1>
+          <span className={`${styles.status} ${conn === 'live' ? styles.live : ''}`}>
+            Seat {slot} · {status || 'Connecting…'}
+          </span>
+        </header>
+        <Sheet
+          character={me}
+          world={world}
+          pending={pending}
+          onChange={(next) => setMyCharacter(next)}
+          onDeclare={(body) => void declare(body)}
+        />
       </div>
     );
   }

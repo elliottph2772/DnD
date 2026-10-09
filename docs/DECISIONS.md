@@ -58,8 +58,9 @@ campaign.
 
 ## The model
 
-The edge function pinned `claude-sonnet-4-5` / `claude-haiku-4-5`. Both are
-superseded:
+The edge function pinned `claude-sonnet-4-5` / `claude-haiku-4-5`, and had no
+`opus` branch at all, so the default selector silently resolved to Haiku. Both
+were superseded; the table below is applied in `gm-agent` as of 2026-10-08:
 
 | selector | model | $/MTok in | $/MTok out | ~$/turn (4k in, 1k out) |
 |---|---|---|---|---|
@@ -76,8 +77,16 @@ The function moves to `npm:@anthropic-ai/sdk` with **structured outputs**
 — the fence-scraping and brace-matching existed only to survive the model
 wrapping its JSON in prose, which structured outputs makes impossible.
 
+**Still outstanding** (2026-10-08): the function remains on raw `fetch` and
+`parseJson`. Only the model IDs moved. Thinking is always on in this
+generation and cannot be disabled, and thinking tokens count against
+`max_tokens`, so each call's budget was raised to leave room to reason — a
+budget sized for the prose alone truncates the JSON and `parseJson` returns
+null. Effort is pinned to `medium`.
+
 The Anthropic key is set by hand in the Supabase dashboard
-(Project Settings → Edge Functions → Secrets). It never enters this repo, a
+(Edge Functions → Secrets, at /dashboard/project/<ref>/functions/secrets — it
+moved out of Project Settings). It never enters this repo, a
 build, or a transcript.
 
 ## Carried-over open items

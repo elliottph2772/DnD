@@ -132,3 +132,50 @@ export const patch = (
   body: Pick<AgentRequest, 'world' | 'party'>,
   creds: AgentCreds,
 ) => callAgent<{ ok: true }>(sbUrl, { action: 'patch', code, ...body, ...creds });
+
+export interface AgentLine {
+  speaker: string;
+  text: string;
+}
+
+/** Advance the scene: the agent resolves pending declarations and narrates. */
+export const advance = (
+  sbUrl: string,
+  code: string,
+  body: Pick<AgentRequest, 'declare' | 'tone' | 'difficulty' | 'model'>,
+  creds: AgentCreds,
+) =>
+  callAgent<{ ok: true; kind: 'advance'; lines: AgentLine[]; consumed: number }>(sbUrl, {
+    action: 'advance',
+    code,
+    ...body,
+    ...creds,
+  });
+
+/** Generate a region and store it on the world. */
+export const biome = (
+  sbUrl: string,
+  code: string,
+  body: Pick<AgentRequest, 'brief' | 'tone' | 'model'>,
+  creds: AgentCreds,
+) =>
+  callAgent<{ ok: true; kind: 'biome'; biome: Record<string, unknown> }>(sbUrl, {
+    action: 'biome',
+    code,
+    ...body,
+    ...creds,
+  });
+
+/** Forge a statblock and push it onto the bestiary. */
+export const foe = (
+  sbUrl: string,
+  code: string,
+  body: Pick<AgentRequest, 'brief' | 'tone' | 'difficulty' | 'model'>,
+  creds: AgentCreds,
+) =>
+  callAgent<{ ok: true; kind: 'foe'; foe: Record<string, unknown> }>(sbUrl, {
+    action: 'foe',
+    code,
+    ...body,
+    ...creds,
+  });

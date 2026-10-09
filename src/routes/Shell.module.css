@@ -81,3 +81,9 @@
 .pending {
   color: var(--color-neutral-600);
 }
+
+/* The GM console is a three-column desk layout, not a phone sheet. It opts
+   out of the 760px reading measure the player view wants. */
+.wide {
+  max-width: 1500px;
+}

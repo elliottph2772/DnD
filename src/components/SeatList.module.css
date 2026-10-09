@@ -50,3 +50,14 @@
   color: var(--color-accent-400);
   font-size: 11px;
 }
+
+/* Destructive outline, per UI-SPEC's delete colours. Used for discarding a
+   built character, which cannot be undone. */
+.danger {
+  border-color: #7d5a5a;
+  color: #e0a3a3;
+}
+
+.danger:hover {
+  background: #33232a;
+}

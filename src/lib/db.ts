@@ -78,8 +78,19 @@ export async function listCampaigns(sb: SupabaseClient): Promise<CampaignSummary
 
 /** One channel per campaign: the world row, its four seats, and new chat. */
 export function subscribe(sb: SupabaseClient, code: string, handlers: SyncHandlers): RealtimeChannel {
+  const topic = `nocturne-${code}`;
+  // supabase-js caches channels by topic. Reconnecting to the same campaign
+  // would hand back the instance that is already subscribed, and attaching
+  // handlers to a subscribed channel throws. unsubscribe() alone does not
+  // evict it from that cache — only removeChannel does.
+  for (const existing of sb.getChannels()) {
+    if (existing.topic === topic || existing.topic === `realtime:${topic}`) {
+      void sb.removeChannel(existing);
+    }
+  }
+
   return sb
-    .channel(`nocturne-${code}`)
+    .channel(topic)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'campaigns', filter: `id=eq.${code}` },

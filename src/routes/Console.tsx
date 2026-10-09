@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
-import SeatList from '../components/SeatList';
-import { gmLink, playerLink, type Route } from '../lib/route';
+import consoleStyles from '../components/console/Console.module.css';
+import ConsoleHeader from '../components/console/ConsoleHeader';
+import PartyRail from '../components/console/PartyRail';
+import ToolTabs from '../components/console/ToolTabs';
+import Transcript from '../components/console/Transcript';
+import { createCampaign } from '../lib/agent';
+import type { Route } from '../lib/route';
 import { useWorld } from '../store/world';
 import styles from './Shell.module.css';
 
@@ -8,42 +13,56 @@ import styles from './Shell.module.css';
  * The GM console. It shows nothing — not a campaign list, not a world — until
  * gm-agent confirms the credential, because `campaigns` stays readable by the
  * publishable key and this page is served publicly.
- *
- * Steps 7–8 of docs/BUILD-PLAN.md fill this out: transcript, quick actions,
- * Combat / Biome / Bestiary / World / Sync tabs.
  */
 export default function Console({ route }: { route: Route }) {
   const conn = useWorld((s) => s.conn);
   const status = useWorld((s) => s.status);
-  const code = useWorld((s) => s.code);
   const isGM = useWorld((s) => s.isGM);
-  const world = useWorld((s) => s.world);
-  const campaigns = useWorld((s) => s.campaigns);
-  const hostedBase = useWorld((s) => s.hostedBase);
-  const gmToken = useWorld((s) => s.gmToken);
+  const sbUrl = useWorld((s) => s.sbUrl);
   const connect = useWorld((s) => s.connect);
   const unlockGM = useWorld((s) => s.unlockGM);
 
   const [codeInput, setCodeInput] = useState(route.code);
   const [pass, setPass] = useState('');
+  const [name, setName] = useState('');
+  const [minting, setMinting] = useState(false);
+  const [minted, setMinted] = useState('');
 
   // A GM link carries both halves, so it connects on its own.
   useEffect(() => {
     if (route.code && route.gmToken && conn === 'idle') void connect(route.code);
   }, [route.code, route.gmToken, conn, connect]);
 
-  const locked = !isGM;
+  // Creating a campaign is a server action: gm-agent mints the code and the
+  // credentials together, because migration 0003 took inserts away from the
+  // publishable key.
+  const mint = async () => {
+    if (minting) return;
+    setMinting(true);
+    try {
+      const made = await createCampaign(sbUrl, name.trim() || 'A new campaign');
+      setMinted(
+        `${made.code} — passphrase: ${made.gm_pass}. Write it down; this is the only time it is shown.`,
+      );
+      window.location.hash = `#gm&c=${made.code}&t=${made.gm_token}`;
+      window.location.reload();
+    } catch (e) {
+      setMinted((e as Error).message);
+    } finally {
+      setMinting(false);
+    }
+  };
 
-  return (
-    <div className={styles.page}>
-      <header className={styles.head}>
-        <h1 className={styles.title}>D&amp;D Game Master Console</h1>
-        <span className={`${styles.status} ${conn === 'live' ? styles.live : ''}`}>
-          {status || 'Not connected'}
-        </span>
-      </header>
+  if (!isGM) {
+    return (
+      <div className={styles.page}>
+        <header className={styles.head}>
+          <h1 className={styles.title}>D&amp;D Game Master Console</h1>
+          <span className={`${styles.status} ${conn === 'live' ? styles.live : ''}`}>
+            {status || 'Not connected'}
+          </span>
+        </header>
 
-      {locked ? (
         <section className={styles.section}>
           <span className="label">Game Master</span>
           <p className={styles.hint}>
@@ -89,54 +108,41 @@ export default function Console({ route }: { route: Route }) {
             <p className={styles.hint}>Connect to the campaign first, then unlock.</p>
           )}
         </section>
-      ) : (
-        <>
-          <section className={styles.section}>
-            <span className="label">{world.campaign || 'Untitled campaign'}</span>
-            <p className={styles.scene}>{world.scene || 'No scene yet.'}</p>
-            <p className={styles.hint}>
-              Round <span className="num">{world.round}</span> · threat{' '}
-              <span className="num">{world.threat}</span> · corruption{' '}
-              <span className="num">{world.corruption}</span>
-            </p>
-          </section>
 
-          <section className={styles.section}>
-            <span className="label">Party</span>
-            <SeatList />
-          </section>
+        <section className={styles.section}>
+          <span className="label">Or start a new campaign</span>
+          <div className={styles.row}>
+            <input
+              className="input"
+              placeholder="Campaign name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary tap"
+              onClick={() => void mint()}
+              disabled={minting}
+            >
+              {minting ? 'Minting…' : 'Create'}
+            </button>
+          </div>
+          {minted && <p className={styles.hint}>{minted}</p>}
+        </section>
+      </div>
+    );
+  }
 
-          <section className={styles.section}>
-            <span className="label">Links</span>
-            <p className={styles.hint}>Player invite — anyone with it can take a seat.</p>
-            <input className="input" readOnly value={playerLink(hostedBase, code)} />
-            <p className={styles.hint}>
-              Game Master link — anyone holding it is the GM. Treat it like a password.
-            </p>
-            <input className="input" readOnly value={gmLink(hostedBase, code, gmToken)} />
-          </section>
-
-          <section className={styles.section}>
-            <span className="label">Saved campaigns</span>
-            {campaigns.length === 0 ? (
-              <p className={styles.hint}>None yet.</p>
-            ) : (
-              <div className={styles.row}>
-                {campaigns.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="btn btn-secondary tap"
-                    onClick={() => void connect(c.id)}
-                  >
-                    {c.id}
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
-      )}
+  // The unlocked console is its own full-height app shell, not a page inside
+  // the reading measure the player view wants.
+  return (
+    <div className={consoleStyles.shell}>
+      <ConsoleHeader />
+      <div className={consoleStyles.grid}>
+        <PartyRail />
+        <Transcript />
+        <ToolTabs />
+      </div>
     </div>
   );
 }

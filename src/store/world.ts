@@ -10,11 +10,15 @@ import * as dbx from '../lib/db';
 import { configFor } from '../lib/env';
 import { currentRoute, type Route } from '../lib/route';
 import {
+  applyCondition,
   blankParty,
   blankWorld,
+  conditionExpires,
   mergeChatRow,
   pendingChat,
+  releaseCondition,
   shouldApplyWorld,
+  tickRound,
   worldRow,
 } from '../lib/world';
 import type { CampaignSummary, Character, ChatLine, ConnState, SeatRow, World } from '../types';
@@ -69,10 +73,42 @@ export interface WorldState {
   writeWorld: (patch: Partial<World>) => Promise<void>;
   unlockGM: (passphrase: string) => Promise<boolean>;
   refreshCampaigns: () => Promise<void>;
+
+  // ---- GM-only. Each goes through gm-agent; none writes `campaigns` directly.
+  /** Which agent call is in flight, '' when idle. One at a time. */
+  busy: string;
+  /** The last thing the agent said back, success or failure. */
+  note: string;
+  /** Which model the agent turns use. */
+  model: agent.ModelChoice;
+  setModel: (model: agent.ModelChoice) => void;
+  /** Runs one agent call, holding the busy label and surfacing any error. */
+  runAgent: (
+    label: string,
+    call: (creds: agent.AgentCreds) => Promise<unknown>,
+  ) => Promise<void>;
+  advance: (declare?: string) => Promise<void>;
+  generateBiome: (brief: string) => Promise<void>;
+  forgeFoe: (brief: string) => Promise<void>;
+  patchWorld: (patch: Partial<World>) => Promise<void>;
+  patchSeat: (slot: number, patch: Partial<Character>) => Promise<void>;
+  nudgeHp: (slot: number, by: number) => Promise<void>;
+  applyConditionTo: (slot: number, name: string, label: string, rounds: number) => Promise<void>;
+  releaseConditionOn: (slot: number, name: string) => Promise<void>;
+  nextRound: () => Promise<void>;
+  dropCampaign: (code: string) => Promise<void>;
 }
 
 const route0 = currentRoute();
 const cfg0 = configFor(route0);
+
+/**
+ * Connect generation. `connect` awaits three pulls before it subscribes, so two
+ * overlapping calls — a reconnect, or StrictMode's double-invoked effect — can
+ * both be in flight. Only the newest may write state; an older one that lands
+ * late must not clobber a live connection or report its own failure.
+ */
+let connectGen = 0;
 
 /** Debounce per key, so a flurry of HP edits becomes one write. */
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -104,6 +140,9 @@ export const useWorld = create<WorldState>((set, get) => ({
   claiming: 0,
   chat: [],
   campaigns: [],
+  busy: '',
+  note: '',
+  model: 'opus',
 
   async connect(code) {
     const s = get();
@@ -116,6 +155,9 @@ export const useWorld = create<WorldState>((set, get) => ({
       set({ conn: 'error', status: 'No campaign code.' });
       return;
     }
+
+    const gen = ++connectGen;
+    const stale = () => gen !== connectGen;
 
     dbx.unsubscribe(s.channel);
     set({ conn: 'connecting', status: 'Connecting…', code: cid, channel: null });
@@ -135,13 +177,23 @@ export const useWorld = create<WorldState>((set, get) => ({
     try {
       // Opening a campaign pulls, never pushes.
       const world = await dbx.pullWorld(sb, cid);
+      if (stale()) return;
       if (world) get().applyWorld(world, true);
 
       const cursor = Number(world?.chat_cursor ?? 0);
       const seats = await dbx.pullSeats(sb, cid);
+      if (stale()) return;
       seats.forEach((row) => get().applySeat(row));
 
+      // A reload arrives with no slot, and the writeCfg below would then store
+      // 0 over the seat this client had. The claim itself is in the database,
+      // and clientId survives a reload, so take the seat back from the rows we
+      // just pulled rather than dropping the player into the lobby.
+      const mine = seats.find((row) => row.claimed_by && row.claimed_by === s.clientId);
+      if (mine) set({ slot: mine.slot });
+
       const chat = await dbx.pullChat(sb, cid, cursor).catch(() => [] as ChatLine[]);
+      if (stale()) return;
       set({ chat });
 
       const channel = dbx.subscribe(sb, cid, {
@@ -160,6 +212,7 @@ export const useWorld = create<WorldState>((set, get) => ({
       }
       void get().refreshCampaigns();
     } catch (e) {
+      if (stale()) return;
       const err = e as { message?: string; hint?: string };
       set({ conn: 'error', status: `Error: ${err.message || err.hint || 'unknown'}` });
     }
@@ -325,6 +378,148 @@ export const useWorld = create<WorldState>((set, get) => ({
       set({ campaigns: await dbx.listCampaigns(dbx.db(s.sbUrl, s.sbKey)) });
     } catch {
       // A failed list is not worth a visible error; the table still works.
+    }
+  },
+
+  setModel(model) {
+    set({ model });
+    writeCfg({ model });
+  },
+
+  // Every agent call funnels through here: one at a time, with the busy label
+  // and the note the console shows. The world comes back over realtime, so
+  // nothing here writes `world` itself.
+  async runAgent(label, call) {
+    const s = get();
+    if (!s.isGM || s.busy) return;
+    set({ busy: label, note: '' });
+    try {
+      await call({ gm_token: s.gmToken });
+      set({ busy: '', note: '' });
+    } catch (e) {
+      set({ busy: '', note: (e as Error).message });
+    }
+  },
+
+  async advance(declare = '') {
+    const s = get();
+    await get().runAgent('Advancing…', (creds) =>
+      agent.advance(s.sbUrl, s.code, { declare, model: s.model }, creds),
+    );
+  },
+
+  async generateBiome(brief) {
+    const s = get();
+    await get().runAgent('Surveying…', (creds) =>
+      agent.biome(s.sbUrl, s.code, { brief, model: s.model }, creds),
+    );
+  },
+
+  async forgeFoe(brief) {
+    const s = get();
+    await get().runAgent('Forging…', (creds) =>
+      agent.foe(s.sbUrl, s.code, { brief, model: s.model }, creds),
+    );
+  },
+
+  /**
+   * A non-AI world edit. Optimistic locally so the console feels immediate;
+   * gm-agent is still the only thing that writes the row.
+   */
+  async patchWorld(patch) {
+    const s = get();
+    if (!s.isGM) return;
+    set({ world: { ...s.world, ...patch, by: 'gm-agent' } });
+    try {
+      await agent.patch(s.sbUrl, s.code, { world: patch }, { gm_token: s.gmToken });
+    } catch (e) {
+      set({ note: (e as Error).message });
+    }
+  },
+
+  /** A non-AI edit to one seat's character. */
+  async patchSeat(slot, patch) {
+    const s = get();
+    if (!s.isGM || slot < 1 || slot > 4) return;
+    const current = s.party[slot - 1];
+    if (!current) return;
+    const next = { ...current, ...patch };
+    set({ party: s.party.map((p, i) => (i === slot - 1 ? next : p)) });
+    writeCache(s.code, { world: s.world, party: get().party });
+    try {
+      await agent.patch(
+        s.sbUrl,
+        s.code,
+        { party: [{ slot, hp: next.hp, temp: next.temp, conditions: next.conditions, cond: next.cond }] },
+        { gm_token: s.gmToken },
+      );
+    } catch (e) {
+      set({ note: (e as Error).message });
+    }
+  },
+
+  async nudgeHp(slot, by) {
+    const s = get();
+    const current = s.party[slot - 1];
+    if (!current) return;
+    const hp = Math.max(0, Math.min(current.maxHp || 0, current.hp + by));
+    await get().patchSeat(slot, { hp });
+  },
+
+  async applyConditionTo(slot, name, label, rounds) {
+    const s = get();
+    const current = s.party[slot - 1];
+    if (!current) return;
+    const next = applyCondition(current, {
+      name,
+      label,
+      rounds,
+      expires: conditionExpires(s.world.round, rounds),
+    });
+    await get().patchSeat(slot, { cond: next.cond, conditions: next.conditions });
+  },
+
+  async releaseConditionOn(slot, name) {
+    const s = get();
+    const current = s.party[slot - 1];
+    if (!current) return;
+    const next = releaseCondition(current, name);
+    await get().patchSeat(slot, { cond: next.cond, conditions: next.conditions });
+  },
+
+  /** +1 round, and every condition whose clock has run out drops off. */
+  async nextRound() {
+    const s = get();
+    if (!s.isGM) return;
+    const { party, round } = tickRound(s.party, s.world.round);
+    set({ party, world: { ...s.world, round, by: 'gm-agent' } });
+    try {
+      await agent.patch(
+        s.sbUrl,
+        s.code,
+        {
+          world: { round },
+          party: party.map((c, i) => ({ slot: i + 1, cond: c.cond, conditions: c.conditions })),
+        },
+        { gm_token: s.gmToken },
+      );
+    } catch (e) {
+      set({ note: (e as Error).message });
+    }
+  },
+
+  async dropCampaign(code) {
+    const s = get();
+    if (!s.isGM || !code) return;
+    set({ busy: `Deleting ${code}…` });
+    try {
+      await agent.deleteCampaign(s.sbUrl, code, { gm_token: s.gmToken });
+      set({ busy: '', note: `${code} is gone.` });
+      await get().refreshCampaigns();
+      // Deleting the campaign you are sitting in leaves nothing to show.
+      if (code === s.code) get().disconnect();
+    } catch (e) {
+      set({ busy: '', note: (e as Error).message });
     }
   },
 }));

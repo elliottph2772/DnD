@@ -30,6 +30,38 @@ const passphrase = () => {
   return Array.from(n, x => WORDS[x % WORDS.length]).join("-");
 };
 
+// Eight characters, no 0/O or 1/I — the pairs people mishear reading a code
+// aloud. Must stay in step with `newCode` in src/lib/world.ts, which is the
+// spec this length and alphabet are pinned to by src/lib/world.test.ts.
+// 256 is a whole multiple of 32, so the modulo carries no bias.
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const newCode = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(8)), b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
+
+// The full world shape, matching `blankWorld` in src/lib/world.ts. The client's
+// applyWorld REPLACES its world with what it pulls rather than merging onto a
+// blank, so a partial seed would leave every missing key undefined and the
+// first component to map over one would throw.
+const blankWorld = (campaign: string) => ({
+  by: "gm-agent",
+  campaign,
+  scene: "",
+  feed: [],
+  threat: 0,
+  corruption: 0,
+  biome: null,
+  quests: [],
+  journal: [],
+  factions: [],
+  antagonist: { name: "", adaptation: "" },
+  enemies: [],
+  order: [],
+  round: 1,
+  turnIdx: 0,
+  bestiary: [],
+  chat_cursor: 0,
+});
+
 async function authorize(code: string, gmToken: string, gmPass: string) {
   const { data } = await sb.from("campaign_secrets").select("gm_token, gm_pass").eq("campaign_id", code).maybeSingle();
   if (!data) return { ok: false, reason: "This campaign has no GM credentials yet — provision it from the console." };
@@ -40,6 +72,13 @@ async function authorize(code: string, gmToken: string, gmPass: string) {
 }
 
 // --------------------------------------------------------------------- agent
+// The three models the console offers. Opus is the default, per CLAUDE.md.
+const MODELS: Record<string, string> = {
+  opus: "claude-opus-5-5",
+  sonnet: "claude-sonnet-5-5",
+  haiku: "claude-haiku-5-5",
+};
+
 async function claude(system: string, user: string, maxTokens: number, model: string) {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   if (!key) throw new Error("ANTHROPIC_API_KEY is not set on this function.");
@@ -47,8 +86,13 @@ async function claude(system: string, user: string, maxTokens: number, model: st
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
-      model: model === "sonnet" ? "claude-sonnet-4-5" : "claude-haiku-4-5",
+      model: MODELS[model] || MODELS.opus,
+      // Thinking is always on and cannot be disabled on this generation, and
+      // thinking tokens count against max_tokens. The budgets below are the
+      // prose budget plus room to reason, or the JSON gets cut off mid-object
+      // and parseJson returns null.
       max_tokens: maxTokens,
+      output_config: { effort: "medium" },
       system,
       messages: [{ role: "user", content: user }],
     }),
@@ -170,6 +214,39 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "Bad JSON" }, 400); }
 
   const action = String(body.action || "turn");
+
+  // ---- create: mint the code itself, so this one runs before the code guard.
+  // Migration 0003 took insert on `campaigns` away from the publishable key,
+  // so seeding a new campaign is a server action: code, credentials, the world
+  // row and its four empty seats, in one call.
+  if (action === "create") {
+    const want = String(body.world?.campaign || "").trim();
+    let fresh = "";
+    for (let i = 0; i < 6 && !fresh; i++) {
+      const c = newCode();
+      const { data: taken } = await sb.from("campaigns").select("id").eq("id", c).maybeSingle();
+      if (!taken) fresh = c;
+    }
+    if (!fresh) return json({ error: "Could not find an unused campaign code. Try again." }, 500);
+
+    const rec = { campaign_id: fresh, gm_token: token(), gm_pass: passphrase() };
+    const { error: secErr } = await sb.from("campaign_secrets").insert(rec);
+    if (secErr) return json({ error: secErr.message }, 500);
+
+    const seed = blankWorld(want || "A new campaign");
+    const { error: campErr2 } = await sb.from("campaigns").insert({ id: fresh, world: seed, updated_at: new Date().toISOString() });
+    if (campErr2) {
+      // Leave no orphan credential behind for a code with no campaign.
+      await sb.from("campaign_secrets").delete().eq("campaign_id", fresh);
+      return json({ error: campErr2.message }, 500);
+    }
+    await sb.from("characters").upsert(
+      [1, 2, 3, 4].map(n => ({ campaign_id: fresh, slot: n })),
+      { onConflict: "campaign_id,slot", ignoreDuplicates: true },
+    );
+    return json({ code: fresh, gm_token: rec.gm_token, gm_pass: rec.gm_pass, existing: false });
+  }
+
   const code = String(body.code || "").trim().toUpperCase();
   if (!code) return json({ error: "Missing campaign code" }, 400);
 
@@ -208,17 +285,51 @@ Deno.serve(async (req) => {
   const auth = await authorize(code, body.gm_token, body.gm_pass);
   if (!auth.ok) return json({ error: auth.reason }, 403);
 
+  // ---- delete: the campaign, its seats, its transcript and its credentials.
+  // Runs before the campaign is loaded below: a half-deleted campaign whose
+  // row is already gone must still be clearable.
+  if (action === "delete") {
+    await sb.from("chat").delete().eq("campaign_id", code);
+    const seats = await sb.from("characters").delete().eq("campaign_id", code);
+    if (seats.error) return json({ error: seats.error.message }, 500);
+    const row = await sb.from("campaigns").delete().eq("id", code);
+    if (row.error) return json({ error: row.error.message }, 500);
+    await sb.from("campaign_secrets").delete().eq("campaign_id", code);
+    return json({ ok: true, kind: "delete" });
+  }
+
   const { data: camp, error: campErr } = await sb.from("campaigns").select("world").eq("id", code).maybeSingle();
   if (campErr) return json({ error: campErr.message }, 500);
   if (!camp) return json({ error: "Campaign " + code + " does not exist." }, 404);
 
   const world = camp.world || {};
+
+  // ---- world: the console's debounced full-row push. No model call. This is
+  // the replacement for the direct upsert migration 0003 took away.
+  if (action === "world") {
+    const incoming = body.world && typeof body.world === "object" ? body.world : null;
+    if (!incoming) return json({ error: "No world in the request." }, 400);
+    const w: any = { ...incoming };
+    // The cursor is the server's: it records which chat rows a turn has already
+    // consumed. A client pushing a stale copy must never rewind it, or those
+    // declarations get fed to the agent a second time.
+    w.chat_cursor = Math.max(Number(world.chat_cursor) || 0, Number(incoming.chat_cursor) || 0);
+    if (typeof w.threat === "number") w.threat = Math.max(0, Math.min(100, w.threat));
+    if (typeof w.corruption === "number") w.corruption = Math.max(0, Math.min(100, w.corruption));
+    if (Array.isArray(w.feed)) w.feed = w.feed.slice(-40);
+    if (Array.isArray(w.journal)) w.journal = w.journal.slice(-20);
+    const { error } = await sb.from("campaigns")
+      .update({ world: w, updated_at: new Date().toISOString() }).eq("id", code);
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true, kind: "world" });
+  }
+
   const { data: chars } = await sb.from("characters").select("slot, data").eq("campaign_id", code).order("slot");
   const party = (chars || []).map(r => r.data?.char).filter(Boolean);
   const lvl = partyLevel(party);
   const tone = String(body.tone || "Grim dark");
   const diff = String(body.difficulty || "Deadly");
-  const model = String(body.model || "haiku");
+  const model = String(body.model || "opus");
 
   const worldBlob = JSON.stringify({
     campaign: world.campaign, scene: world.scene, threat: world.threat, corruption: world.corruption,
@@ -238,7 +349,7 @@ Deno.serve(async (req) => {
     if (action === "biome") {
       const raw = await claude(biomeSystem(tone, lvl),
         "CAMPAIGN CONTEXT:\n" + worldBlob + "\n\nREGION BRIEF: " + (String(body.brief || "").trim() || "invent one that grows out of this campaign's own history and unresolved threads"),
-        2600, model);
+        9000, model);
       const d = parseJson(raw);
       if (!d?.name) return json({ error: "The agent returned nothing usable." }, 502);
       const grid = Array.isArray(d.map?.grid) ? d.map.grid : [];
@@ -252,7 +363,7 @@ Deno.serve(async (req) => {
     if (action === "foe") {
       const raw = await claude(foeSystem(tone, lvl, diff),
         "CAMPAIGN CONTEXT:\n" + worldBlob + "\n\nTHREAT BRIEF: " + (String(body.brief || "").trim() || "escalate the current scene with something the party has not learned to counter"),
-        2000, model);
+        8000, model);
       const d = parseJson(raw);
       if (!d?.name) return json({ error: "The agent returned nothing usable." }, 502);
       const w = { ...world, bestiary: [d].concat(world.bestiary || []).slice(0, 8), by: "gm-agent" };
@@ -266,7 +377,7 @@ Deno.serve(async (req) => {
     // gated on GM credentials.
     if (action === "patch") {
       const ALLOW = ["scene", "threat", "corruption", "order", "round", "turnIdx", "journal", "quests", "enemies"];
-      const patch = body.world_patch && typeof body.world_patch === "object" ? body.world_patch : {};
+      const patch = body.world && typeof body.world === "object" ? body.world : {};
       const w: any = { ...world, by: "gm-agent" };
       for (const k of ALLOW) if (k in patch) w[k] = patch[k];
       if (typeof w.threat === "number") w.threat = Math.max(0, Math.min(100, w.threat));
@@ -274,7 +385,7 @@ Deno.serve(async (req) => {
       if (Array.isArray(w.journal)) w.journal = w.journal.slice(-20);
       await sb.from("campaigns").update({ world: w, updated_at: new Date().toISOString() }).eq("id", code);
 
-      const pp = Array.isArray(body.party_patch) ? body.party_patch : [];
+      const pp = Array.isArray(body.party) ? body.party : [];
       for (const u of pp) {
         const slot = Number(u?.slot);
         if (!(slot >= 1 && slot <= 4)) continue;
@@ -300,6 +411,14 @@ Deno.serve(async (req) => {
     }
 
     // ---- advance ----------------------------------------------------------
+    // Guarded, not a fallthrough. Everything above returns, so without this an
+    // unrecognised action would reach the model and move the world — a typo, or
+    // a client action this deploy does not know yet, would cost a turn.
+    // "turn" is the prototype's old default name for the same thing.
+    if (action !== "advance" && action !== "turn") {
+      return json({ error: "Unknown action: " + action }, 400);
+    }
+
     const cursor = Number(world.chat_cursor || 0);
     const { data: msgs } = await sb.from("chat").select("id, speaker, text, kind")
       .eq("campaign_id", code).gt("id", cursor).order("id").limit(40);
@@ -311,7 +430,7 @@ Deno.serve(async (req) => {
     const raw = await claude(gmSystem(tone, diff, lvl),
       "WORLD STATE:\n" + worldBlob + "\n\nRECENT TRANSCRIPT:\n" + recent +
       "\n\nPLAYERS DECLARE: " + (declared || "(no declaration — advance the scene, raise the pressure)") +
-      "\n\nRespond with the JSON object.", 2400, model);
+      "\n\nRespond with the JSON object.", 10000, model);
     const d = parseJson(raw);
     if (!d || !Array.isArray(d.lines)) return json({ error: "The agent returned nothing usable. Try advancing again." }, 502);
 

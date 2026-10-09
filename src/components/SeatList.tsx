@@ -7,13 +7,15 @@ const SLOTS = [1, 2, 3, 4];
 interface Props {
   /** Show Claim / Leave controls. The console watches; players sit down. */
   claimable?: boolean;
+  /** Which roster character sits down when a seat is claimed. */
+  characterId?: string;
 }
 
 /**
  * The four seats, live. Proof that sync works: claim one here and it dims on
  * every other screen at the table within the round-trip.
  */
-export default function SeatList({ claimable = false }: Props) {
+export default function SeatList({ claimable = false, characterId = '' }: Props) {
   const party = useWorld((s) => s.party);
   const claims = useWorld((s) => s.claims);
   const mySlot = useWorld((s) => s.slot);
@@ -103,8 +105,10 @@ export default function SeatList({ claimable = false }: Props) {
                   <button
                     type="button"
                     className="btn btn-primary tap"
-                    disabled={claiming === slot}
-                    onClick={() => void claimSeat(slot)}
+                    // A seat is claimed with a character, so there is nothing
+                    // to claim with until one is chosen.
+                    disabled={claiming === slot || !characterId}
+                    onClick={() => void claimSeat(slot, characterId)}
                   >
                     {claiming === slot ? 'Claiming…' : 'Claim'}
                   </button>

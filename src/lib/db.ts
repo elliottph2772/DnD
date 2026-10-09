@@ -1,11 +1,17 @@
 // The only file that touches Supabase. Components never call `supabase.from`.
 //
-// Under the locked-down policies this client can: read `campaigns`, read and
-// write `characters` (its own seat), and read and insert `chat`. Every world
-// write goes through gm-agent — see lib/agent.ts.
+// Under the locked-down policies this client can: read `campaigns`, read all
+// `seats` and write its own, read and write its own `characters` (the roster),
+// and read and insert `chat`. Every world write goes through gm-agent — see
+// lib/agent.ts.
+//
+// Since migration 0004 the client signs in anonymously, so `auth.uid()` is a
+// real identity the database checks rather than a string the client asserts.
+// A seat claim is now enforced by RLS, not by trust.
 
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 import type { CampaignSummary, Character, ChatLine, SeatRow, World } from '../types';
+import type { RosterEntry } from './roster';
 import { blankCharacter } from './world';
 
 let client: SupabaseClient | null = null;
@@ -15,10 +21,33 @@ let clientFor = '';
 export function db(sbUrl: string, sbKey: string): SupabaseClient {
   const fingerprint = `${sbUrl}|${sbKey}`;
   if (!client || clientFor !== fingerprint) {
+    // persistSession is the default and is wanted: the anonymous user must
+    // survive a reload, or every refresh would strand the roster behind a new
+    // identity that owns nothing.
     client = createClient(sbUrl, sbKey);
     clientFor = fingerprint;
   }
   return client;
+}
+
+/**
+ * The user id this browser acts as, signing in anonymously the first time.
+ *
+ * Anonymous is deliberate: a character has to belong to someone before it can
+ * follow them between campaigns, but asking for an email before anyone has
+ * rolled a character is the wrong trade. `linkIdentity` later upgrades this
+ * same user to a real account keeping everything it owns.
+ */
+export async function signIn(sb: SupabaseClient): Promise<string> {
+  const existing = await sb.auth.getSession();
+  const have = existing.data.session?.user?.id;
+  if (have) return have;
+
+  const { data, error } = await sb.auth.signInAnonymously();
+  if (error) throw error;
+  const id = data.user?.id;
+  if (!id) throw new Error('Signed in but got no user back.');
+  return id;
 }
 
 export interface SyncHandlers {
@@ -36,7 +65,7 @@ export async function pullWorld(sb: SupabaseClient, code: string): Promise<World
 }
 
 export async function pullSeats(sb: SupabaseClient, code: string): Promise<SeatRow[]> {
-  const { data, error } = await sb.from('characters').select('*').eq('campaign_id', code);
+  const { data, error } = await sb.from('seats').select('*').eq('campaign_id', code);
   if (error) throw error;
   return (data ?? []) as SeatRow[];
 }
@@ -101,7 +130,7 @@ export function subscribe(sb: SupabaseClient, code: string, handlers: SyncHandle
     )
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'characters', filter: `campaign_id=eq.${code}` },
+      { event: '*', schema: 'public', table: 'seats', filter: `campaign_id=eq.${code}` },
       (p) => handlers.onSeat(p.new as SeatRow),
     )
     .on(
@@ -126,7 +155,7 @@ export function unsubscribe(channel: RealtimeChannel | null): void {
 
 // --------------------------------------------------------------- writes
 
-/** Write one seat. A player only ever writes their own. */
+/** Write one seat. RLS allows only the holder's own. */
 export async function pushSeat(
   sb: SupabaseClient,
   code: string,
@@ -134,15 +163,14 @@ export async function pushSeat(
   char: Character | null,
   clientId: string,
 ): Promise<void> {
-  const { error } = await sb.from('characters').upsert(
-    {
-      campaign_id: code,
-      slot,
-      data: { by: clientId, char },
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'campaign_id,slot' },
-  );
+  // An update, not an upsert: gm-agent creates the four seats at campaign
+  // creation and 0004 revoked insert from clients, so an upsert's insert arm
+  // would be refused rather than silently doing nothing.
+  const { error } = await sb
+    .from('seats')
+    .update({ data: { by: clientId, char }, updated_at: new Date().toISOString() })
+    .eq('campaign_id', code)
+    .eq('slot', slot);
   if (error) throw error;
 }
 
@@ -160,38 +188,25 @@ export async function claimSeat(
   sb: SupabaseClient,
   code: string,
   slot: number,
+  userId: string,
+  characterId: string,
+  character: Character,
   clientId: string,
 ): Promise<ClaimResult> {
   const stamp = new Date().toISOString();
 
-  const current = await sb
-    .from('characters')
-    .select('claimed_by')
-    .eq('campaign_id', code)
-    .eq('slot', slot)
-    .maybeSingle();
-  if (current.error) throw current.error;
-
-  if (!current.data) {
-    // No row yet (a campaign made before `create` seeded all four).
-    const ins = await sb
-      .from('characters')
-      .insert({
-        campaign_id: code,
-        slot,
-        claimed_by: clientId,
-        data: { by: clientId, char: blankCharacter() },
-        updated_at: stamp,
-      })
-      .select('slot');
-    if (!ins.error && ins.data?.length) return { ok: true };
-  } else if (current.data.claimed_by === clientId) {
-    return { ok: true };
-  }
-
+  // The claim and the character land in one write. The `is('claimed_by', null)`
+  // filter is still here, but it is no longer the only thing stopping a race:
+  // the "claim a free seat" policy carries the same condition, so the database
+  // refuses a second claimer even if a client skipped this filter entirely.
   const claim = await sb
-    .from('characters')
-    .update({ claimed_by: clientId, updated_at: stamp })
+    .from('seats')
+    .update({
+      claimed_by: userId,
+      character_id: characterId,
+      data: { by: clientId, char: character },
+      updated_at: stamp,
+    })
     .eq('campaign_id', code)
     .eq('slot', slot)
     .is('claimed_by', null)
@@ -199,33 +214,82 @@ export async function claimSeat(
   if (claim.error) throw claim.error;
   if (claim.data?.length) return { ok: true };
 
+  // Nothing matched: either somebody else holds it, or this user already does.
   const who = await sb
-    .from('characters')
+    .from('seats')
     .select('claimed_by')
     .eq('campaign_id', code)
     .eq('slot', slot)
     .maybeSingle();
-  if (who.data?.claimed_by === clientId) return { ok: true };
+  if (who.data?.claimed_by === userId) return { ok: true };
   return { ok: false, takenBy: who.data?.claimed_by ?? 'taken' };
 }
 
-/** Leave a seat: release the claim and blank the sheet. */
+/** Leave a seat: release the claim, unlink the character and blank the sheet. */
 export async function freeSeat(
   sb: SupabaseClient,
   code: string,
   slot: number,
   clientId: string,
 ): Promise<void> {
-  const { error } = await sb.from('characters').upsert(
-    {
-      campaign_id: code,
-      slot,
+  // An update, not an upsert: seats are created by gm-agent and clients have
+  // had insert revoked since 0004.
+  const { error } = await sb
+    .from('seats')
+    .update({
       claimed_by: null,
+      character_id: null,
       data: { by: clientId, char: blankCharacter() },
       updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'campaign_id,slot' },
-  );
+    })
+    .eq('campaign_id', code)
+    .eq('slot', slot);
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------- roster
+
+/** Every character this user owns. Private to them — RLS sees to that. */
+export async function pullRoster(sb: SupabaseClient): Promise<RosterEntry[]> {
+  const { data, error } = await sb
+    .from('characters')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as RosterEntry[];
+}
+
+/** Put a new character on the roster and hand back the row. */
+export async function createCharacter(
+  sb: SupabaseClient,
+  owner: string,
+  char: Character,
+): Promise<RosterEntry> {
+  const { data, error } = await sb
+    .from('characters')
+    .insert({ owner, data: char })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as RosterEntry;
+}
+
+/** Save a roster character. Only its owner can, and only their own. */
+export async function saveCharacter(
+  sb: SupabaseClient,
+  id: string,
+  char: Character,
+): Promise<void> {
+  const { error } = await sb
+    .from('characters')
+    .update({ data: char, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/** Remove a character from the roster. Seats keep their copy. */
+export async function deleteCharacter(sb: SupabaseClient, id: string): Promise<void> {
+  const { error } = await sb.from('characters').delete().eq('id', id);
   if (error) throw error;
 }
 

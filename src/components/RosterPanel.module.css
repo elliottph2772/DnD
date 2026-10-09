@@ -1,0 +1,54 @@
+.panel {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.card {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+  color: var(--color-neutral-300);
+  font: inherit;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.card:hover {
+  border-color: var(--color-accent-700);
+}
+
+.card[aria-pressed='true'] {
+  background: var(--color-accent-900);
+  border-color: var(--color-accent-800);
+  color: var(--color-accent-200);
+}
+
+.name {
+  color: inherit;
+}
+
+.sub {
+  font-size: 11.5px;
+  color: var(--color-neutral-600);
+}
+
+.drop {
+  flex: none;
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-neutral-600);
+  font-size: 12px;
+}

@@ -6,6 +6,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { create } from 'zustand';
 import * as agent from '../lib/agent';
 import { MODULE_RULE, moduleBrief, moduleFor, moveTo } from '../lib/module';
+import { instanceFor, ordered, type RosterEntry } from '../lib/roster';
 import { clientId as readClientId, readCache, writeCache, writeCfg } from '../lib/cache';
 import * as dbx from '../lib/db';
 import { configFor } from '../lib/env';
@@ -33,7 +34,12 @@ interface Cached {
 
 export interface WorldState {
   // identity and configuration
+  /** This browser, for ignoring the echo of its own writes. */
   clientId: string;
+  /** Who this is, from anonymous auth. Owns the roster; holds seats. */
+  userId: string;
+  /** The characters this user owns, newest played first. */
+  roster: RosterEntry[];
   route: Route;
   sbUrl: string;
   sbKey: string;
@@ -67,7 +73,13 @@ export interface WorldState {
   applySeat: (row: SeatRow) => void;
   applyChatRow: (row: ChatLine) => void;
   pending: () => ChatLine[];
-  claimSeat: (slot: number) => Promise<void>;
+  /** Sit a roster character down in a seat. */
+  claimSeat: (slot: number, characterId: string) => Promise<void>;
+  refreshRoster: () => Promise<void>;
+  /** Put a finished character on the roster; returns its new id. */
+  addToRoster: (char: Character) => Promise<string | null>;
+  updateRoster: (id: string, char: Character) => Promise<void>;
+  removeFromRoster: (id: string) => Promise<void>;
   leaveSeat: () => Promise<void>;
   setMyCharacter: (patch: Partial<Character>) => void;
   declare: (text: string) => Promise<void>;
@@ -125,6 +137,8 @@ function debounce(key: string, fn: () => void, ms: number): void {
 
 export const useWorld = create<WorldState>((set, get) => ({
   clientId: CLIENT_ID,
+  userId: '',
+  roster: [],
   route: route0,
   sbUrl: cfg0.sbUrl,
   sbKey: cfg0.sbKey,
@@ -174,6 +188,11 @@ export const useWorld = create<WorldState>((set, get) => ({
     let sb: SupabaseClient;
     try {
       sb = dbx.db(s.sbUrl, s.sbKey);
+      // Identity first: every seat write is now checked against auth.uid(),
+      // so without this the table is readable but nothing can be claimed.
+      const userId = await dbx.signIn(sb);
+      if (stale()) return;
+      set({ userId });
     } catch (e) {
       set({ conn: 'error', status: `Failed: ${(e as Error).message}` });
       return;
@@ -194,7 +213,8 @@ export const useWorld = create<WorldState>((set, get) => ({
       // 0 over the seat this client had. The claim itself is in the database,
       // and clientId survives a reload, so take the seat back from the rows we
       // just pulled rather than dropping the player into the lobby.
-      const mine = seats.find((row) => row.claimed_by && row.claimed_by === s.clientId);
+      const me = get().userId;
+      const mine = seats.find((row) => row.claimed_by && row.claimed_by === me);
       if (mine) set({ slot: mine.slot });
 
       const chat = await dbx.pullChat(sb, cid, cursor).catch(() => [] as ChatLine[]);
@@ -216,6 +236,7 @@ export const useWorld = create<WorldState>((set, get) => ({
         void agent.verify(s.sbUrl, cid, { gm_token: token }).then((ok) => set({ isGM: ok }));
       }
       void get().refreshCampaigns();
+      void get().refreshRoster();
     } catch (e) {
       if (stale()) return;
       const err = e as { message?: string; hint?: string };
@@ -279,13 +300,28 @@ export const useWorld = create<WorldState>((set, get) => ({
     return pendingChat(s.chat, s.world.chat_cursor);
   },
 
-  async claimSeat(slot) {
+  async claimSeat(slot, characterId) {
     const s = get();
     if (s.conn !== 'live' || s.claiming) return;
+    const entry = s.roster.find((r) => r.id === characterId);
+    if (!entry) {
+      set({ status: 'Pick a character first.' });
+      return;
+    }
     set({ claiming: slot, status: `Claiming seat ${slot}…` });
     try {
       const sb = dbx.db(s.sbUrl, s.sbKey);
-      const result = await dbx.claimSeat(sb, s.code, slot, s.clientId);
+      // The copy that sits down — full health, nothing spent. See lib/roster.ts
+      // for why a seat holds a copy rather than the roster row itself.
+      const result = await dbx.claimSeat(
+        sb,
+        s.code,
+        slot,
+        s.userId,
+        characterId,
+        instanceFor(entry),
+        s.clientId,
+      );
       if (result.ok) {
         set({ claiming: 0, slot, status: `Live · ${s.code}` });
         writeCfg({ code: s.code, slot });
@@ -567,6 +603,52 @@ export const useWorld = create<WorldState>((set, get) => ({
       if (code === s.code) get().disconnect();
     } catch (e) {
       set({ busy: '', note: (e as Error).message });
+    }
+  },
+
+  async refreshRoster() {
+    const s = get();
+    if (!s.userId) return;
+    try {
+      set({ roster: ordered(await dbx.pullRoster(dbx.db(s.sbUrl, s.sbKey))) });
+    } catch {
+      // A roster that fails to load is not worth an error banner; the table
+      // still works and the next connect tries again.
+    }
+  },
+
+  async addToRoster(char) {
+    const s = get();
+    if (!s.userId) return null;
+    try {
+      const made = await dbx.createCharacter(dbx.db(s.sbUrl, s.sbKey), s.userId, char);
+      set({ roster: ordered([made, ...s.roster]) });
+      return made.id;
+    } catch (e) {
+      set({ status: `Could not save: ${(e as Error).message}` });
+      return null;
+    }
+  },
+
+  async updateRoster(id, char) {
+    const s = get();
+    set({
+      roster: ordered(s.roster.map((r) => (r.id === id ? { ...r, data: char } : r))),
+    });
+    try {
+      await dbx.saveCharacter(dbx.db(s.sbUrl, s.sbKey), id, char);
+    } catch (e) {
+      set({ status: `Could not save: ${(e as Error).message}` });
+    }
+  },
+
+  async removeFromRoster(id) {
+    const s = get();
+    set({ roster: s.roster.filter((r) => r.id !== id) });
+    try {
+      await dbx.deleteCharacter(dbx.db(s.sbUrl, s.sbKey), id);
+    } catch (e) {
+      set({ status: `Could not delete: ${(e as Error).message}` });
     }
   },
 }));

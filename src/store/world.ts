@@ -267,8 +267,13 @@ export const useWorld = create<WorldState>((set, get) => ({
     const claims = { ...s.claims, [row.slot]: row.claimed_by || '' };
     const data = row.data ?? { by: '', char: null };
 
-    // Your own writes come back on the channel; take the claim, ignore the rest.
-    if (data.by === s.clientId) {
+    // Your own writes come back on the channel. Ignoring them stops a slow
+    // echo clobbering an edit made since — but only when there is something
+    // to clobber. With the slot still empty the echo is the only copy there
+    // is, which is the case after a reload: clientId survives in
+    // localStorage, so a seat claimed earlier would otherwise stay blank.
+    const localChar = s.party[row.slot - 1];
+    if (data.by === s.clientId && localChar?.built) {
       set({ claims });
       return;
     }
@@ -323,8 +328,19 @@ export const useWorld = create<WorldState>((set, get) => ({
         s.clientId,
       );
       if (result.ok) {
-        set({ claiming: 0, slot, status: `Live · ${s.code}` });
+        // Seat the character locally too. The write echoes back over realtime
+        // tagged with this clientId, and applySeat ignores its own echo on
+        // purpose — so without this the seat would be held but empty until
+        // some unrelated write happened to refresh it.
+        const sat = instanceFor(entry);
+        set((st) => ({
+          claiming: 0,
+          slot,
+          status: `Live · ${s.code}`,
+          party: st.party.map((p, i) => (i === slot - 1 ? sat : p)),
+        }));
         writeCfg({ code: s.code, slot });
+        writeCache(s.code, { world: get().world, party: get().party });
       } else {
         set((st) => ({
           claiming: 0,

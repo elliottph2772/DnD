@@ -1,12 +1,13 @@
 name: CI and Pages
 
 # Every push runs the rules tests and the production build, so a wrong 5e
-# number or a type error never reaches main quietly.
+# number or a type error never reaches main quietly, and a green build on main
+# publishes itself.
 #
-# Deployment is deliberately manual for now: Pages still serves the gh-pages
-# branch with the last prototype build, and that stays live until the rebuilt
-# player view is good enough to replace it. At cutover, set the repository's
-# Pages source to "GitHub Actions" and drop the `if:` on the deploy job.
+# Cut over from the prototype on 2026-10-09: Pages' source is now "GitHub
+# Actions" rather than the gh-pages branch, and the deploy job runs on every
+# push to main. Because lint, tests and the build all gate it, a red commit
+# never reaches the live site.
 
 on:
   push:
@@ -58,7 +59,8 @@ jobs:
 
   deploy:
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    # Only from main — a pull request builds and is checked, but never deploys.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

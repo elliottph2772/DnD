@@ -356,7 +356,15 @@
   color: var(--color-accent-300);
 }
 
-/* Below the three-column breakpoint the shell stops being a desk. */
+/* Below the three-column breakpoint the shell stops being a desk and becomes
+   a page. Two things change beyond the obvious stacking:
+
+   - The order inverts. On a desk the party sits to the left because it is
+     glanceable; stacked, it would push the transcript below the fold. The
+     transcript is the game, so it goes first, then the tools, then the party.
+   - Anything laid out across a column's width has to be re-capped. The dice
+     tray is four columns of a 290px rail; across a tablet it becomes four
+     220px slabs, which is absurd. */
 @media (max-width: 1100px) {
   .shell {
     height: auto;
@@ -365,6 +373,18 @@
 
   .grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .centre {
+    order: 1;
+  }
+
+  .right {
+    order: 2;
+  }
+
+  .rail {
+    order: 3;
   }
 
   .rail,
@@ -376,6 +396,26 @@
   .scroll,
   .feedScroll {
     overflow: visible;
+  }
+
+  /* Seats sit two or three across rather than one per row, so four of them do
+     not cost four screens of scrolling. Scoped to the rail: the tools column
+     uses the same .scroll and must stay a single stack. */
+  .rail .scroll {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    align-content: start;
+  }
+
+  /* The dice tray keeps its own measure instead of spanning the page. */
+  .pinned {
+    max-width: 420px;
+  }
+
+  /* The transcript no longer has a column to fill, so give it a reading
+     measure rather than letting lines run the full width of a tablet. */
+  .feedScroll {
+    max-width: 72ch;
   }
 }
 

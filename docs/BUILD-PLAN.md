@@ -167,8 +167,11 @@ Still open:
 - **"Start over"** to rebuild a character mid-game. Needs a ruling on what
   happens to XP, level and inventory first — and step 9 may answer it, since a
   roster character can simply be brought again.
-- The console is desktop-first. It stacks below 1100px but that path is
-  untuned; worth real attention if a GM ever runs a session from a tablet.
+- ~~The console's stacked path below 1100px was untuned~~ — the order now
+  inverts so the transcript comes first rather than being pushed below four
+  seats and a dice tray, the seats sit two or three across, and anything laid
+  out across a column's width is re-capped. Worth a look on a real tablet; it
+  was tuned by replaying the breakpoint rather than on the device.
 
 Closed since the handoff:
 

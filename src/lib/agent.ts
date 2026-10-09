@@ -39,6 +39,14 @@ export interface AgentRequest extends AgentCreds {
   declare?: string;
   /** `biome`: an optional steer for the region. */
   brief?: string;
+  /**
+   * `advance`: the campaign module's slice for this turn. Split in two because
+   * `module_core` never changes for a campaign and is prompt-cached server
+   * side, while `module_here` moves with the party and must not be.
+   */
+  module_core?: string;
+  module_here?: string;
+  module_rule?: string;
   /** `patch`: whitelisted world keys and per-slot party fields. */
   world?: Partial<World>;
   party?: { slot: number; hp?: number; temp?: number; conditions?: string[]; cond?: Character['cond'] }[];
@@ -94,9 +102,13 @@ export interface Credentials {
   existing?: boolean;
 }
 
-/** Mint a campaign: code, credentials, the world row and its four seats. */
-export const createCampaign = (sbUrl: string, campaign: string) =>
-  callAgent<Credentials & { code: string }>(sbUrl, { action: 'create', world: { campaign } });
+/**
+ * Mint a campaign: code, credentials, the world row and its four seats.
+ * `world` is the seed — for a module campaign that is `seedWorldFrom`, which
+ * the console builds because it is what holds the module data.
+ */
+export const createCampaign = (sbUrl: string, world: Partial<World>) =>
+  callAgent<Credentials & { code: string }>(sbUrl, { action: 'create', world });
 
 /** Re-read the credentials of a campaign you already own. */
 export const provision = (sbUrl: string, code: string, creds: AgentCreds = {}) =>
@@ -142,7 +154,10 @@ export interface AgentLine {
 export const advance = (
   sbUrl: string,
   code: string,
-  body: Pick<AgentRequest, 'declare' | 'tone' | 'difficulty' | 'model'>,
+  body: Pick<
+    AgentRequest,
+    'declare' | 'tone' | 'difficulty' | 'model' | 'module_core' | 'module_here' | 'module_rule'
+  >,
   creds: AgentCreds,
 ) =>
   callAgent<{ ok: true; kind: 'advance'; lines: AgentLine[]; consumed: number }>(sbUrl, {

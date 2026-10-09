@@ -554,16 +554,25 @@
 /* ------------------------------------------------------------- tool tabs */
 .tabs {
   display: flex;
-  flex-wrap: wrap;
+  /* Six tools do not fit 340px. Wrapping put a row on top of the panel, so the
+     strip scrolls sideways instead and keeps its one-line height. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
   gap: var(--space-1);
   border-bottom: 1px solid var(--color-neutral-900);
 }
 
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
 .tab {
+  flex: 0 0 auto;
   background: transparent;
   border: 0;
   border-bottom: 2px solid transparent;
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-2);
   color: var(--color-neutral-600);
   font: inherit;
   font-size: 10.5px;
@@ -702,4 +711,11 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+/* An unfound module secret reads as held back, not hidden — the GM can see it,
+   it just has not reached the agent or the players yet. */
+.dimSecret {
+  opacity: 0.55;
+  font-style: italic;
 }

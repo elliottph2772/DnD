@@ -1,6 +1,10 @@
 // The shared shapes, straight from docs/ARCHITECTURE.md. The jsonb columns are
 // typed here once and nowhere else.
 
+import type { ModuleState } from './data/modules/types';
+
+export type { ModuleState };
+
 export type Ability = 'STR' | 'DEX' | 'CON' | 'INT' | 'WIS' | 'CHA';
 
 export type Scores = Record<Ability, number>;
@@ -137,6 +141,8 @@ export interface World {
   bestiary: Statblock[];
   /** Highest chat.id already resolved into a turn. */
   chat_cursor: number;
+  /** Progress through a campaign module, when the campaign is running one. */
+  module?: ModuleState;
   turn_at?: string;
 }
 

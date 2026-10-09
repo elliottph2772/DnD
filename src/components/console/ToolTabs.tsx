@@ -2,11 +2,12 @@ import { useState } from 'react';
 import BestiaryTab from './BestiaryTab';
 import BiomeTab from './BiomeTab';
 import CombatTab from './CombatTab';
+import ModuleTab from './ModuleTab';
 import SyncTab from './SyncTab';
 import WorldTab from './WorldTab';
 import styles from './Console.module.css';
 
-const TABS = ['Combat', 'Biome', 'Bestiary', 'World', 'Sync'] as const;
+const TABS = ['Combat', 'Module', 'Biome', 'Bestiary', 'World', 'Sync'] as const;
 type Tab = (typeof TABS)[number];
 
 /** The right-hand column: five tools, one at a time. */
@@ -32,6 +33,7 @@ export default function ToolTabs() {
 
       <div className={styles.scroll}>
         {tab === 'Combat' && <CombatTab />}
+        {tab === 'Module' && <ModuleTab />}
         {tab === 'Biome' && <BiomeTab />}
         {tab === 'Bestiary' && <BestiaryTab />}
         {tab === 'World' && <WorldTab />}

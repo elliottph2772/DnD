@@ -4,7 +4,9 @@ import ConsoleHeader from '../components/console/ConsoleHeader';
 import PartyRail from '../components/console/PartyRail';
 import ToolTabs from '../components/console/ToolTabs';
 import Transcript from '../components/console/Transcript';
+import { MODULES } from '../data/modules';
 import { createCampaign } from '../lib/agent';
+import { seedWorldFrom } from '../lib/module';
 import type { Route } from '../lib/route';
 import { useWorld } from '../store/world';
 import styles from './Shell.module.css';
@@ -27,6 +29,8 @@ export default function Console({ route }: { route: Route }) {
   const [name, setName] = useState('');
   const [minting, setMinting] = useState(false);
   const [minted, setMinted] = useState('');
+  // '' is a blank campaign the GM improvises; anything else is a module id.
+  const [moduleId, setModuleId] = useState(MODULES[0]?.id ?? '');
 
   // A GM link carries both halves, so it connects on its own.
   useEffect(() => {
@@ -40,7 +44,11 @@ export default function Console({ route }: { route: Route }) {
     if (minting) return;
     setMinting(true);
     try {
-      const made = await createCampaign(sbUrl, name.trim() || 'A new campaign');
+      const chosen = MODULES.find((m) => m.id === moduleId);
+      const seed = chosen
+        ? seedWorldFrom(chosen, name)
+        : { campaign: name.trim() || 'A new campaign' };
+      const made = await createCampaign(sbUrl, seed);
       setMinted(
         `${made.code} — passphrase: ${made.gm_pass}. Write it down; this is the only time it is shown.`,
       );
@@ -111,10 +119,29 @@ export default function Console({ route }: { route: Route }) {
 
         <section className={styles.section}>
           <span className="label">Or start a new campaign</span>
+          <select
+            className="input"
+            value={moduleId}
+            onChange={(e) => setModuleId(e.target.value)}
+          >
+            {MODULES.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.title} — levels {m.levels[0]}–{m.levels[1]}
+              </option>
+            ))}
+            <option value="">Nothing prebuilt — the agent invents it all</option>
+          </select>
+          {moduleId && (
+            <p className={styles.hint}>
+              {MODULES.find((m) => m.id === moduleId)?.blurb}
+            </p>
+          )}
           <div className={styles.row}>
             <input
               className="input"
-              placeholder="Campaign name"
+              placeholder={
+                MODULES.find((m) => m.id === moduleId)?.title ?? 'Campaign name'
+              }
               value={name}
               onChange={(e) => setName(e.target.value)}
             />

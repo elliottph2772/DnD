@@ -5,6 +5,7 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { create } from 'zustand';
 import * as agent from '../lib/agent';
+import { MODULE_RULE, moduleBrief, moduleFor, moveTo } from '../lib/module';
 import { clientId as readClientId, readCache, writeCache, writeCfg } from '../lib/cache';
 import * as dbx from '../lib/db';
 import { configFor } from '../lib/env';
@@ -88,6 +89,8 @@ export interface WorldState {
     call: (creds: agent.AgentCreds) => Promise<unknown>,
   ) => Promise<void>;
   advance: (declare?: string) => Promise<void>;
+  /** Walk the party to another location in the campaign module. */
+  moveParty: (to: string) => Promise<void>;
   generateBiome: (brief: string) => Promise<void>;
   forgeFoe: (brief: string) => Promise<void>;
   patchWorld: (patch: Partial<World>) => Promise<void>;
@@ -403,9 +406,37 @@ export const useWorld = create<WorldState>((set, get) => ({
 
   async advance(declare = '') {
     const s = get();
+    // When the campaign is running a module, send its live slice — never the
+    // whole module. lib/module.ts decides what that slice is.
+    const module = moduleFor(s.world.module);
+    const brief = module && s.world.module ? moduleBrief(module, s.world.module) : null;
     await get().runAgent('Advancing…', (creds) =>
-      agent.advance(s.sbUrl, s.code, { declare, model: s.model }, creds),
+      agent.advance(
+        s.sbUrl,
+        s.code,
+        {
+          declare,
+          model: s.model,
+          tone: module?.tone,
+          difficulty: module?.difficulty,
+          ...(brief ? { module_core: brief.core, module_here: brief.here, module_rule: MODULE_RULE } : {}),
+        },
+        creds,
+      ),
     );
+  },
+
+  async moveParty(to) {
+    const s = get();
+    if (!s.isGM || !s.world.module) return;
+    const next = moveTo(s.world.module, to);
+    if (next === s.world.module) return;
+    const module = moduleFor(next);
+    const place = module?.locations.find((l) => l.id === to);
+    await get().patchWorld({
+      module: next,
+      ...(place ? { scene: place.name } : {}),
+    });
   },
 
   async generateBiome(brief) {

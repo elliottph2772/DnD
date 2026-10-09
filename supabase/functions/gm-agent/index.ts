@@ -79,7 +79,20 @@ const MODELS: Record<string, string> = {
   haiku: "claude-haiku-5-5",
 };
 
-async function claude(system: string, user: string, maxTokens: number, model: string) {
+/**
+ * `system` may be a plain string, or blocks when part of it is worth caching.
+ * A campaign module's core never changes for a campaign, so it is sent as its
+ * own block with cache_control: reads cost a twentieth of fresh input, which is
+ * what makes shipping a module on every turn affordable at all.
+ */
+type SystemBlock = { type: "text"; text: string; cache_control?: { type: "ephemeral" } };
+
+async function claude(
+  system: string | SystemBlock[],
+  user: string,
+  maxTokens: number,
+  model: string,
+) {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   if (!key) throw new Error("ANTHROPIC_API_KEY is not set on this function.");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -220,7 +233,11 @@ Deno.serve(async (req) => {
   // so seeding a new campaign is a server action: code, credentials, the world
   // row and its four empty seats, in one call.
   if (action === "create") {
-    const want = String(body.world?.campaign || "").trim();
+    // The console holds the module data, so it builds the seed world and sends
+    // it here. Only a plain object is accepted, and the code and `by` are the
+    // server's to set.
+    const seedWorld = body.world && typeof body.world === "object" ? body.world : {};
+    const want = String(seedWorld.campaign || "").trim();
     let fresh = "";
     for (let i = 0; i < 6 && !fresh; i++) {
       const c = newCode();
@@ -233,7 +250,7 @@ Deno.serve(async (req) => {
     const { error: secErr } = await sb.from("campaign_secrets").insert(rec);
     if (secErr) return json({ error: secErr.message }, 500);
 
-    const seed = blankWorld(want || "A new campaign");
+    const seed = { ...blankWorld(want || "A new campaign"), ...seedWorld, by: "gm-agent" };
     const { error: campErr2 } = await sb.from("campaigns").insert({ id: fresh, world: seed, updated_at: new Date().toISOString() });
     if (campErr2) {
       // Leave no orphan credential behind for a code with no campaign.
@@ -376,7 +393,7 @@ Deno.serve(async (req) => {
     // function rather than the client's public key so that they, too, are
     // gated on GM credentials.
     if (action === "patch") {
-      const ALLOW = ["scene", "threat", "corruption", "order", "round", "turnIdx", "journal", "quests", "enemies"];
+      const ALLOW = ["scene", "threat", "corruption", "order", "round", "turnIdx", "journal", "quests", "enemies", "module", "biome", "bestiary", "factions", "antagonist"];
       const patch = body.world && typeof body.world === "object" ? body.world : {};
       const w: any = { ...world, by: "gm-agent" };
       for (const k of ALLOW) if (k in patch) w[k] = patch[k];
@@ -427,7 +444,23 @@ Deno.serve(async (req) => {
       .filter(Boolean).join("\n");
 
     const recent = (world.feed || []).slice(-10).map((l: any) => l.speaker + ": " + l.text).join("\n");
-    const raw = await claude(gmSystem(tone, diff, lvl),
+
+    // A campaign module arrives in two halves. The base rules and the module's
+    // core are stable for the whole campaign, so the cache breakpoint goes
+    // after them; `module_here` moves with the party and stays uncached.
+    const moduleCore = String(body.module_core || "").trim();
+    const moduleHere = String(body.module_here || "").trim();
+    const moduleRule = String(body.module_rule || "").trim();
+
+    const system: string | SystemBlock[] = moduleCore
+      ? [
+          { type: "text", text: gmSystem(tone, diff, lvl) },
+          { type: "text", text: moduleRule + "\n\n" + moduleCore, cache_control: { type: "ephemeral" } },
+          ...(moduleHere ? [{ type: "text", text: moduleHere } as SystemBlock] : []),
+        ]
+      : gmSystem(tone, diff, lvl);
+
+    const raw = await claude(system,
       "WORLD STATE:\n" + worldBlob + "\n\nRECENT TRANSCRIPT:\n" + recent +
       "\n\nPLAYERS DECLARE: " + (declared || "(no declaration — advance the scene, raise the pressure)") +
       "\n\nRespond with the JSON object.", 10000, model);

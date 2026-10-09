@@ -1,41 +1,22 @@
-import { useState } from 'react';
-import { CONDITIONS, DURATIONS } from '../../data/rules';
 import { useWorld } from '../../store/world';
+import ConditionPicker from '../ConditionPicker';
 import type { Combatant } from '../../types';
 import styles from './Console.module.css';
 
 const d20 = () => Math.floor(Math.random() * 20) + 1;
 
 /**
- * Combat: initiative, enemies, and the conditions block.
- *
- * Both selects here derive their value from the options rather than holding a
- * number of their own. The prototype's duration select displayed one thing
- * while its state said another (see docs/BUILD-PLAN.md); deriving means the
- * two cannot drift.
+ * Combat: initiative, enemies, the round clock, and the conditions block.
+ * The conditions block itself is ConditionPicker, shared with the remote GM
+ * drawer so the two cannot drift apart.
  */
 export default function CombatTab() {
   const world = useWorld((s) => s.world);
   const party = useWorld((s) => s.party);
   const patchWorld = useWorld((s) => s.patchWorld);
   const nextRound = useWorld((s) => s.nextRound);
-  const applyConditionTo = useWorld((s) => s.applyConditionTo);
-  const releaseConditionOn = useWorld((s) => s.releaseConditionOn);
 
-  const [target, setTarget] = useState(0);
-  const [condName, setCondName] = useState(CONDITIONS[0].name);
-  const [durLabel, setDurLabel] = useState(DURATIONS[0].label);
-  const [override, setOverride] = useState('');
-
-  const seated = party
-    .map((c, i) => ({ c, slot: i + 1 }))
-    .filter((x) => x.c.built);
-
-  // Derive, never trust: a target that has left the table falls back to the
-  // first seat, and the select shows what will actually be used.
-  const activeTarget = seated.some((x) => x.slot === target) ? target : (seated[0]?.slot ?? 0);
-  const condition = CONDITIONS.find((x) => x.name === condName) ?? CONDITIONS[0];
-  const duration = DURATIONS.find((d) => d.label === durLabel) ?? DURATIONS[0];
+  const seated = party.map((c, i) => ({ c, slot: i + 1 })).filter((x) => x.c.built);
 
   const rollInitiative = () => {
     const rolls: Combatant[] = [
@@ -61,19 +42,6 @@ export default function CombatTab() {
     }
     void patchWorld({ turnIdx: next });
   };
-
-  const apply = () => {
-    if (!activeTarget) return;
-    const typed = Number(override);
-    const rounds = override.trim() !== '' && Number.isFinite(typed) ? typed : duration.rounds;
-    void applyConditionTo(activeTarget, condition.name, duration.label, rounds);
-    setOverride('');
-  };
-
-  // Everyone currently carrying something, flattened for the active list.
-  const active = party.flatMap((c, i) =>
-    (c.cond || []).map((cond) => ({ slot: i + 1, who: c.name, cond })),
-  );
 
   return (
     <div className={styles.panel}>
@@ -131,90 +99,8 @@ export default function CombatTab() {
         </button>
       </div>
 
-      {active.length > 0 && (
-        <div className={styles.card}>
-          {active.map(({ slot, who, cond }) => (
-            <div key={`${slot}-${cond.name}`} className={styles.rowBetween}>
-              <span>
-                {who} · {cond.name}
-              </span>
-              <span className={styles.row}>
-                <span className="num">
-                  {cond.expires > 0 ? `${Math.max(0, cond.expires - world.round)} rd` : '—'}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => void releaseConditionOn(slot, cond.name)}
-                >
-                  Release
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <span className="label">Apply a condition</span>
-      {seated.length === 0 ? (
-        <p className={styles.hint}>Nobody has built a character yet.</p>
-      ) : (
-        <>
-          <select
-            className="input"
-            value={activeTarget}
-            onChange={(e) => setTarget(Number(e.target.value))}
-          >
-            {seated.map(({ c, slot }) => (
-              <option key={slot} value={slot}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="input"
-            value={condition.name}
-            onChange={(e) => setCondName(e.target.value)}
-          >
-            {CONDITIONS.map((c) => (
-              <option key={c.name} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <p className={styles.hint}>{condition.text}</p>
-
-          <select
-            className="input"
-            value={duration.label}
-            onChange={(e) => setDurLabel(e.target.value)}
-          >
-            {DURATIONS.map((d) => (
-              <option key={d.label} value={d.label}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-
-          <input
-            className="input"
-            inputMode="numeric"
-            placeholder={`Rounds — ${duration.rounds || 'no clock'}`}
-            value={override}
-            onChange={(e) => setOverride(e.target.value.replace(/[^0-9]/g, ''))}
-          />
-          <p className={styles.hint}>
-            {duration.rounds > 0
-              ? 'Rounds — override if the ruling differs.'
-              : 'Does not tick down; release it by hand.'}
-          </p>
-
-          <button type="button" className="btn btn-primary tap" onClick={apply}>
-            Apply
-          </button>
-        </>
-      )}
+      <span className="label">Conditions</span>
+      <ConditionPicker />
     </div>
   );
 }

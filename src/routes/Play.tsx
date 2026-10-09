@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import GmDrawer from '../components/drawer/GmDrawer';
 import SeatList from '../components/SeatList';
 import Sheet from '../components/sheet/Sheet';
 import Wizard from '../components/wizard/Wizard';
@@ -9,8 +10,12 @@ import styles from './Shell.module.css';
 
 /**
  * The player view. Reads the world, writes its own seat, inserts into chat —
- * nothing else. Steps 4–6 of docs/BUILD-PLAN.md add the six-step wizard, the
- * sheet, casting and the read-only condition list.
+ * nothing else.
+ *
+ * A GM opening this page with a verified token also gets the remote drawer, so
+ * they can run the table from the same phone everyone else is using. `lock=1`
+ * on the player invite hides the unlock field entirely, so handing out the
+ * invite never hints that there is a GM door here at all.
  */
 export default function Play({ route }: { route: Route }) {
   const conn = useWorld((s) => s.conn);
@@ -21,6 +26,9 @@ export default function Play({ route }: { route: Route }) {
   const declare = useWorld((s) => s.declare);
   const party = useWorld((s) => s.party);
   const setMyCharacter = useWorld((s) => s.setMyCharacter);
+  const isGM = useWorld((s) => s.isGM);
+  const unlockGM = useWorld((s) => s.unlockGM);
+  const lockGM = useWorld((s) => s.lockGM);
   // Select the raw inputs and derive here. `s.pending()` filters, so it returns
   // a new array on every call; as a selector that reference never settles and
   // Zustand's useSyncExternalStore snapshot loops until React gives up. The
@@ -30,10 +38,37 @@ export default function Play({ route }: { route: Route }) {
   const pending = useMemo(() => pendingChat(chat, cursor), [chat, cursor]);
 
   const [text, setText] = useState('');
+  const [pass, setPass] = useState('');
 
   useEffect(() => {
     if (route.code && conn === 'idle') void connect(route.code);
   }, [route.code, conn, connect]);
+
+  // The GM's half of this page: the drawer once verified, or the passphrase
+  // door before that. A `lock=1` invite shows neither.
+  const gm = isGM ? (
+    <GmDrawer onLock={lockGM} />
+  ) : route.locked ? null : (
+    <section className={styles.section}>
+      <div className={styles.row}>
+        <input
+          className="input"
+          placeholder="GM passphrase — three words"
+          value={pass}
+          onChange={(e) => setPass(e.target.value)}
+          spellCheck={false}
+        />
+        <button
+          type="button"
+          className="btn btn-secondary tap"
+          disabled={conn !== 'live' || !pass.trim()}
+          onClick={() => void unlockGM(pass)}
+        >
+          Unlock
+        </button>
+      </div>
+    </section>
+  );
 
   const send = () => {
     const body = text.trim();
@@ -65,6 +100,7 @@ export default function Play({ route }: { route: Route }) {
             Seat {slot} · {status || 'Connecting…'}
           </span>
         </header>
+        {gm}
         <Wizard
           character={me ?? blankCharacter()}
           onDone={(next) => setMyCharacter(next)}
@@ -84,6 +120,7 @@ export default function Play({ route }: { route: Route }) {
             Seat {slot} · {status || 'Connecting…'}
           </span>
         </header>
+        {gm}
         <Sheet
           character={me}
           world={world}
@@ -103,6 +140,8 @@ export default function Play({ route }: { route: Route }) {
           {slot ? `Seat ${slot}` : 'No seat'} · {status || 'Connecting…'}
         </span>
       </header>
+
+      {gm}
 
       <section className={styles.section}>
         <span className="label">{world.scene || 'The table is quiet'}</span>

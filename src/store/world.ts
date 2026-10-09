@@ -73,6 +73,8 @@ export interface WorldState {
   declare: (text: string) => Promise<void>;
   writeWorld: (patch: Partial<World>) => Promise<void>;
   unlockGM: (passphrase: string) => Promise<boolean>;
+  /** Drop the GM credential from this device. */
+  lockGM: () => void;
   refreshCampaigns: () => Promise<void>;
 
   // ---- GM-only. Each goes through gm-agent; none writes `campaigns` directly.
@@ -371,6 +373,20 @@ export const useWorld = create<WorldState>((set, get) => ({
     } catch (e) {
       set({ status: (e as Error).message });
       return false;
+    }
+  },
+
+  /**
+   * Forget the credential on this device — for handing the phone across the
+   * table. The token is cleared from state, from the stored config and from
+   * the URL, so a reload does not quietly restore it.
+   */
+  lockGM() {
+    set({ gmToken: '', isGM: false, status: `Live · ${get().code}` });
+    writeCfg({ gmToken: '' });
+    if (typeof window !== 'undefined') {
+      const clean = window.location.hash.replace(/[&?](t|gm)=[^&]*/gi, '');
+      window.history.replaceState(null, '', clean || '#play');
     }
   },
 

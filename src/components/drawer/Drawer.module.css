@@ -1,0 +1,242 @@
+/* The remote GM drawer: the whole console, folded onto a phone the GM is
+   holding at the table. Mobile-first — every target clears 44px, nothing
+   relies on hover, and the section tabs scroll rather than wrap. */
+
+.drawer {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: #181a29;
+  border: 1px solid var(--color-accent-800);
+  border-radius: 8px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-accent-300);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-neutral-900);
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-neutral-600);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.tab[aria-selected='true'] {
+  color: var(--color-accent-200);
+  border-bottom-color: var(--color-accent);
+}
+
+/* The busy label and the last message sit to the right of the section tabs,
+   per UI-SPEC, so a long agent turn is visible from whichever section. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 18px;
+}
+
+@keyframes emberpulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.busy {
+  color: var(--color-accent-400);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  animation: emberpulse 1.2s ease-in-out infinite;
+}
+
+.note {
+  margin: 0;
+  color: #e0a3a3;
+  font-size: 11.5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* Quick actions and other button rows wrap into even columns on a phone. */
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.grow {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-neutral-600);
+  font-size: 11.5px;
+}
+
+/* ----------------------------------------------------------------- party */
+.seat {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+}
+
+.seatHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.name {
+  color: var(--color-neutral-200);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hp {
+  flex: none;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--color-neutral-400);
+}
+
+.bar {
+  height: 4px;
+  background: var(--color-neutral-900);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  background: var(--color-accent-500);
+}
+
+.barLow {
+  background: #e0a3a3;
+}
+
+/* Four even HP steps, each a full 44px target. */
+.nudges {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+}
+
+.nudge {
+  min-height: 44px;
+  background: transparent;
+  border: 1px solid var(--color-divider);
+  border-radius: 4px;
+  color: var(--color-neutral-400);
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.nudge:active {
+  background: var(--color-accent-900);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.chip {
+  padding: 2px var(--space-2);
+  background: var(--color-accent-900);
+  border: 1px solid var(--color-accent-800);
+  border-radius: 4px;
+  color: var(--color-accent-300);
+  font-size: 10.5px;
+}
+
+/* ------------------------------------------------------------------- log */
+.quest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 8px;
+  color: var(--color-neutral-300);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.done {
+  color: var(--color-neutral-600);
+  text-decoration: line-through;
+}
+
+.failed {
+  color: #e0a3a3;
+}
+
+.status3 {
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}

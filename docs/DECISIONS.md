@@ -124,3 +124,11 @@ Deferred:
   handoff folder (722,585 B vs 823,582 B). The newer one is live now.
 - `Character.skills` is a string in the prototype, not the array
   ARCHITECTURE's sketch implies. The prototype wins.
+- Migration **0004 is written but deliberately NOT applied** (2026-10-09). It
+  renames `characters` to `seats` and gives the name to a new roster table, so
+  applying it without the matching client change breaks the running app. It
+  also needs **anonymous sign-ins enabled** on the project, which is a
+  dashboard toggle under Authentication -> Sign In / Providers and has no API.
+  Until that toggle is on, `signInAnonymously` returns
+  `anonymous_provider_disabled` and nothing in step 9 can be verified. Apply
+  the migration and switch the client in one pass, not separately.
